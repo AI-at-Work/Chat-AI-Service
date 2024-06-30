@@ -35,10 +35,24 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         logging.info(f"Received chat from user {request.user_id}, session {request.session_id}")
 
         # Prepare the context for OpenAI API
-        context_prompt = f"Previous relevant conversation summary:\n {request.chat_summary}\n\n"
-        context_prompt += f"Current user message:\n {request.chat_message}\n\n"
-        context_prompt += f"Note: You have to answer the user query based upon the summary provided.\n"
-
+        context_prompt = f"""
+            Previous conversation context:
+            {request.chat_summary}
+        
+            Current user message:
+            {request.chat_message}
+        
+            Instructions:
+            1. Analyze the conversation context and the current user message.
+            2. Provide a response that maintains continuity with the previous context.
+            3. If the current message introduces a new topic, acknowledge the shift while referring back to relevant parts of the previous context if applicable.
+            4. If clarification is needed on any part of the previous context, ask the user for more details.
+            5. Ensure your response is coherent, relevant, and builds upon the existing conversation.
+        
+            Note: Base your response primarily on the provided context and current message. If additional information is required, state this clearly in your response.
+        
+            Please respond to the user's message now:
+        """
         print("Context Prompt: ", context_prompt)
 
         # Generate response using OpenAI API
@@ -72,18 +86,6 @@ def serve():
         port=REDIS_PORT,
         password=REDIS_PASSWORD
     )
-
-    # user_id = "6c2f2f31-1cb1-4310-b89d-b370c8718cf6"
-    # session_id = "2fad58be-8f52-482c-a698-e0e5574a3aee"
-    # chat_message = "shitij"
-
-    # try:
-    #     embeddings = generate_embeddings(chat_message)
-    #     relevant_chats = search_redis(user_id=user_id, session_id=session_id, embedded_query=embeddings,
-    #                                   redis_client=redis_client)
-    #     print(relevant_chats)
-    # except Exception as e:
-    #     print(e)
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     ai_service_pb2_grpc.add_AIServiceServicer_to_server(AIService(redis_client), server)
