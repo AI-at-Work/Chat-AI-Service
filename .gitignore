@@ -21,5 +21,6 @@
 go.work
 go.work.sum
 
+.idea
 .env
 docker_compose_storage
