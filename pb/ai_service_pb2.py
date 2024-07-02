@@ -15,7 +15,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_service.proto\x12\nai_service\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc8\x01\n\x07Request\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63hat_message\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\x12\x16\n\x0esession_prompt\x18\x05 \x01(\t\x12\x11\n\tfile_name\x18\x06 \x01(\t\x12\x14\n\x0c\x63hat_summary\x18\x07 \x01(\t\x12-\n\ttimestamp\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"P\n\x08Response\x12\x15\n\rresponse_text\x18\x01 \x01(\t\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp2C\n\tAIService\x12\x36\n\x07Process\x12\x13.ai_service.Request\x1a\x14.ai_service.Response\"\x00\x42\x0eZ\x0c.;ai_serviceb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_service.proto\x12\nai_service\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc8\x01\n\x07Request\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63hat_message\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\x12\x16\n\x0esession_prompt\x18\x05 \x01(\t\x12\x11\n\tfile_name\x18\x06 \x03(\t\x12\x14\n\x0c\x63hat_summary\x18\x07 \x01(\t\x12-\n\ttimestamp\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"P\n\x08Response\x12\x15\n\rresponse_text\x18\x01 \x01(\t\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp2C\n\tAIService\x12\x36\n\x07Process\x12\x13.ai_service.Request\x1a\x14.ai_service.Response\"\x00\x42\x0eZ\x0c.;ai_serviceb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)

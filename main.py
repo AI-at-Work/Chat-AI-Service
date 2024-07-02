@@ -53,7 +53,7 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         
             Please respond to the user's message now:
         """
-        print("Context Prompt: ", context_prompt)
+        # print("Context Prompt: ", context_prompt)
 
         # Generate response using OpenAI API
         try:
