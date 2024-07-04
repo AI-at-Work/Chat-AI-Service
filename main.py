@@ -32,7 +32,7 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
 
     def Process(self, request, context):
         # Log the incoming request
-        logging.info(f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}")
+        logging.info(f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, chat_history:{request.chat_history}\n\n")
 
         # Prepare the context for OpenAI API
         context_prompt = f"""
