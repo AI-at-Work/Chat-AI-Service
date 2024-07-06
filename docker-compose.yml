@@ -1,0 +1,16 @@
+version: '3.3'
+
+services:
+  ai_service:
+    build: .
+    restart: on-failure
+    env_file:
+      - .env
+    container_name: ${AI_SERVER_HOST}
+    ports:
+      - "${AI_SERVER_PORT}:${AI_SERVER_PORT}"
+    networks:
+      ai_chat-backend:
+
+networks:
+  ai_chat-backend:
