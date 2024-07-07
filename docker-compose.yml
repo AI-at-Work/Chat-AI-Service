@@ -1,4 +1,4 @@
-version: '3.3'
+version: '3.5'
 
 services:
   ai_service:
@@ -14,3 +14,5 @@ services:
 
 networks:
   ai_chat-backend:
+    name: ai_chat-backend
+    external: true
