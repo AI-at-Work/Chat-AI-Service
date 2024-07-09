@@ -28,7 +28,7 @@ A Service to write AI Agent Logic.
 
 3. Start the service:
    ```bash
-   docker-compose up -d --build
+   make && docker-compose up -d --build
    ```
 
 ## Configuration
