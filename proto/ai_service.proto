@@ -22,7 +22,8 @@ message Request {
   repeated string file_name = 6;  // The files to process
   string chat_summary = 7;
   string chat_history = 8;
-  google.protobuf.Timestamp timestamp = 9;  // Timestamp of the request
+  float balance = 9;  // Timestamp of the request
+  google.protobuf.Timestamp timestamp = 10;  // Timestamp of the request
 }
 
 // The response message containing the server's response.

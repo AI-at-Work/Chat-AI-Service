@@ -15,7 +15,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_service.proto\x12\nai_service\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x01\n\x07Request\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63hat_message\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\x12\x16\n\x0esession_prompt\x18\x05 \x01(\t\x12\x11\n\tfile_name\x18\x06 \x03(\t\x12\x14\n\x0c\x63hat_summary\x18\x07 \x01(\t\x12\x14\n\x0c\x63hat_history\x18\x08 \x01(\t\x12-\n\ttimestamp\x18\t \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"^\n\x08Response\x12\x15\n\rresponse_text\x18\x01 \x01(\t\x12\x0c\n\x04\x63ost\x18\x02 \x01(\x02\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp2C\n\tAIService\x12\x36\n\x07Process\x12\x13.ai_service.Request\x1a\x14.ai_service.Response\"\x00\x42\x0eZ\x0c.;ai_serviceb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x61i_service.proto\x12\nai_service\x1a\x1fgoogle/protobuf/timestamp.proto\"\xef\x01\n\x07Request\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x12\n\nsession_id\x18\x02 \x01(\t\x12\x14\n\x0c\x63hat_message\x18\x03 \x01(\t\x12\x12\n\nmodel_name\x18\x04 \x01(\t\x12\x16\n\x0esession_prompt\x18\x05 \x01(\t\x12\x11\n\tfile_name\x18\x06 \x03(\t\x12\x14\n\x0c\x63hat_summary\x18\x07 \x01(\t\x12\x14\n\x0c\x63hat_history\x18\x08 \x01(\t\x12\x0f\n\x07\x62\x61lance\x18\t \x01(\x02\x12-\n\ttimestamp\x18\n \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"^\n\x08Response\x12\x15\n\rresponse_text\x18\x01 \x01(\t\x12\x0c\n\x04\x63ost\x18\x02 \x01(\x02\x12-\n\ttimestamp\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp2C\n\tAIService\x12\x36\n\x07Process\x12\x13.ai_service.Request\x1a\x14.ai_service.Response\"\x00\x42\x0eZ\x0c.;ai_serviceb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -24,9 +24,9 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\014.;ai_service'
   _globals['_REQUEST']._serialized_start=66
-  _globals['_REQUEST']._serialized_end=288
-  _globals['_RESPONSE']._serialized_start=290
-  _globals['_RESPONSE']._serialized_end=384
-  _globals['_AISERVICE']._serialized_start=386
-  _globals['_AISERVICE']._serialized_end=453
+  _globals['_REQUEST']._serialized_end=305
+  _globals['_RESPONSE']._serialized_start=307
+  _globals['_RESPONSE']._serialized_end=401
+  _globals['_AISERVICE']._serialized_start=403
+  _globals['_AISERVICE']._serialized_end=470
 # @@protoc_insertion_point(module_scope)

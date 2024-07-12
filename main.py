@@ -6,6 +6,7 @@ import redis
 from google.protobuf.timestamp_pb2 import Timestamp
 import sys
 import os
+import tiktoken
 
 import modules.cost.openai_cost
 
@@ -28,67 +29,64 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 AI_SERVER_PORT = os.getenv("AI_SERVER_PORT")
 
+# Set token limits
+MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS"))
+MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS"))
+
+
 class AIService(ai_service_pb2_grpc.AIServiceServicer):
     def __init__(self, redis_client):
         self.redis_client = redis_client
 
-    def Process(self, request, context):
-        # Log the incoming request
-        logging.info(f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, chat_history:{request.chat_history}\n\n")
+    def get_token_count(self, text, model):
+        encoding = tiktoken.encoding_for_model(model)
+        return len(encoding.encode(text))
 
-        # Prepare the context for OpenAI API
-        # context_prompt = f"""
-        #     Previous conversation context:
-        #     {request.chat_summary}
-        #
-        #     Current user message:
-        #     {request.chat_message}
-        #
-        #     Instructions:
-        #     1. Analyze the conversation context and the current user message.
-        #     2. Provide a response that maintains continuity with the previous context.
-        #     3. If the current message introduces a new topic, acknowledge the shift while referring back to relevant parts of the previous context if applicable.
-        #     4. If clarification is needed on any part of the previous context, ask the user for more details.
-        #     5. Ensure your response is coherent, relevant, and builds upon the existing conversation.
-        #
-        #     Note: Base your response primarily on the provided context and current message. If additional information is required, state this clearly in your response.
-        #
-        #     Please respond to the user's message now:
-        # """
+    def get_input_token_cost(self, tokens, model_name):
+        cost = modules.cost.openai_cost.estimate_openai_api_cost(
+            model_name,
+            num_tokens_input=tokens,
+            num_tokens_output=0
+        )
+        return cost
+
+    def Process(self, request, context):
+        logging.info(
+            f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, chat_history:{request.chat_history}\n\n")
 
         context_prompt = f"""The following is a friendly conversation between a user and an AI Assistant. The AI 
         Assistant is talkative and provides lots of specific details from its context and do what user ask for. If the AI Assistant does not 
         know the answer to a question, it truthfully says it does not know. 
-        
 
-	the summary is given in the form of text and past conversation is given in the form of json. 
+        the summary is given in the form of text and past conversation is given in the form of json. 
         Use the provided Summary of conversation and past conversation to answer the query of the user and follow the instructions.
-	(You do not need to use these pieces of information if not relevant)
-
+        (You do not need to use these pieces of information if not relevant)
 
         Summary of conversation:
         {request.chat_summary}
 
-
         past conversation:
         {request.chat_history}
-
 
         User: {request.chat_message}
         Assistant:"""
 
-        print("Context Prompt: ", context_prompt)
-        print('\n\n\n')
+        # Check input token count
+        input_tokens = self.get_token_count(context_prompt, request.model_name)
+        input_tokens_cost = self.get_input_token_cost(input_tokens, request.model_name)
+        if input_tokens > MAX_INPUT_TOKENS or input_tokens_cost > request.balance:
+            context.set_details('Input token limit exceeded')
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return ai_service_pb2.Response()
 
-        session_cost = 0.0
-        # Generate response using OpenAI API
         try:
             response = openai.ChatCompletion.create(
-                model=request.model_name,  # or any other suitable model
+                model=request.model_name,
                 messages=[
                     {"role": "system", "content": request.session_prompt},
                     {"role": "user", "content": context_prompt}
-                ]
+                ],
+                max_tokens=MAX_OUTPUT_TOKENS
             )
             ai_response = response.choices[0].message['content'].strip()
             session_cost = modules.cost.openai_cost.estimate_openai_api_cost(
@@ -101,7 +99,6 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             return ai_service_pb2.Response()
 
-        # Create and return the response
         response = ai_service_pb2.Response(
             response_text=ai_response,
             timestamp=Timestamp(),
