@@ -7,6 +7,8 @@ from google.protobuf.timestamp_pb2 import Timestamp
 import sys
 import os
 
+import modules.cost.openai_cost
+
 # Add the server directory to the Python path
 server_dir = os.path.dirname(os.path.abspath(__file__)) + '/pb'
 sys.path.insert(0, server_dir)
@@ -78,16 +80,22 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         print("Context Prompt: ", context_prompt)
         print('\n\n\n')
 
+        session_cost = 0.0
         # Generate response using OpenAI API
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",  # or any other suitable model
+                model=request.model_name,  # or any other suitable model
                 messages=[
                     {"role": "system", "content": request.session_prompt},
                     {"role": "user", "content": context_prompt}
                 ]
             )
             ai_response = response.choices[0].message['content'].strip()
+            session_cost = modules.cost.openai_cost.estimate_openai_api_cost(
+                request.model_name,
+                num_tokens_input=response.usage.prompt_tokens,
+                num_tokens_output=response.usage.completion_tokens
+            )
         except Exception as e:
             context.set_details(f'Failed to generate response from OpenAI API: {e}')
             context.set_code(grpc.StatusCode.INTERNAL)
@@ -96,7 +104,8 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         # Create and return the response
         response = ai_service_pb2.Response(
             response_text=ai_response,
-            timestamp=Timestamp()
+            timestamp=Timestamp(),
+            cost=session_cost
         )
         response.timestamp.GetCurrentTime()
 

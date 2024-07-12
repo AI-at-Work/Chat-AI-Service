@@ -28,5 +28,6 @@ message Request {
 // The response message containing the server's response.
 message Response {
   string response_text = 1;  // The server's response to the chat
+  float cost = 2;  // The server's response to the chat
   google.protobuf.Timestamp timestamp = 3;  // Timestamp of the response
 }
