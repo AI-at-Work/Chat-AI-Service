@@ -1,6 +1,7 @@
-def estimate_openai_api_cost(model, num_tokens_input, num_tokens_output):
+def estimate_llm_api_cost(model, num_tokens_input, num_tokens_output):
     # Prices of per thousand tokens
     pricing = {
+        "llama3.1:8b": {"input": 0.00150, "output": 0.00200},
         "gpt-3.5-turbo-0125": {"input": 0.00050, "output": 0.00150},
         "gpt-3.5-turbo": {"input": 0.0030, "output": 0.0060},
         "gpt-3.5-turbo-1106": {"input": 0.0010, "output": 0.0020},
@@ -31,5 +32,5 @@ if __name__ == "__main__":
     num_tokens_input = 1000
     num_tokens_output = 1000
 
-    estimated_cost = estimate_openai_api_cost(model, num_tokens_input, num_tokens_output)
+    estimated_cost = estimate_llm_api_cost(model, num_tokens_input, num_tokens_output)
     print(f"Estimated cost for input: {num_tokens_input} and output: {num_tokens_output} tokens using {model}: ${estimated_cost}")

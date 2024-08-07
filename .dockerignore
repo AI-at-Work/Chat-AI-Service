@@ -1,0 +1,3 @@
+venv
+ollama_data_docker
+.env.sample
