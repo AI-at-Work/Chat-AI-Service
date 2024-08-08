@@ -1,14 +1,17 @@
 import grpc
 from concurrent import futures
 import logging
-import openai
 import redis
 from google.protobuf.timestamp_pb2 import Timestamp
+from prompts.chat_conversation_summary_prompt import get_chat_conversation_summary_prompt
+from prompts.rag_prompt import get_rag_prompt
 import sys
 import os
 import tiktoken
 
+from rag import rag
 import modules.cost.openai_cost
+import prompts.chat_conversation_summary_prompt
 
 # Add the server directory to the Python path
 server_dir = os.path.dirname(os.path.abspath(__file__)) + '/pb'
@@ -32,22 +35,33 @@ AI_SERVER_PORT = os.getenv("AI_SERVER_PORT")
 MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS"))
 MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS"))
 
+# path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_DIR = os.path.join(BASE_DIR, 'docs_index')
+
+os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
 
 class AIService(ai_service_pb2_grpc.AIServiceServicer):
     def __init__(self, redis_client):
         self.redis_client = redis_client
         self.llm_service = LLM(openai_api_key=os.getenv("OPENAI_API_KEY"))
+        self.rag = rag.rag(self.llm_service, INDEX_DIR)
 
-    def get_token_count(self, text, model, model_provider):
-        if model_provider == "openai":
+    def get_token_count(self, text, provider, model):
+        if provider == "openai":
             encoding = tiktoken.encoding_for_model(model)
             return len(encoding.encode(text))
         else:
-            return 0 # Because we support ollama, and it is running locally; we can estimate cost based upon tokens later
+            # Because we support ollama, and it is running locally; we can estimate cost based upon tokens later
+            return 0
 
     def get_input_token_cost(self, tokens, model_name):
         cost = modules.cost.openai_cost.estimate_llm_api_cost(model_name, num_tokens_input=tokens, num_tokens_output=0)
         return cost
+
+    def perform_rag(self, session_id, pdf_file, chat_message, provider, model):
+        return self.rag.perform_rag(session_id=session_id, pdf_file_path=pdf_file, query=chat_message,
+                                    provider=provider, model=model)
 
     def Process(self, request, context):
         logging.info(
@@ -55,25 +69,20 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
             f"chat_history:{request.chat_history}, chat_summary: {request.chat_summary}, model: {request.model_name}, "
             f"model_provider: {request.model_provider}\n\n")
 
-        context_prompt = f"""The following is a friendly conversation between a user and an AI Assistant. The AI 
-        Assistant is talkative and provides lots of specific details from its context and do what user ask for. If 
-        the AI Assistant does not know the answer to a question, it truthfully says it does not know.
-
-        the summary is given in the form of text and past conversation is given in the form of json. Use the provided 
-        Summary of conversation and past conversation to answer the query of the user and follow the instructions. (
-        You do not need to use these pieces of information if not relevant)
-
-        Summary of conversation:
-        {request.chat_summary}
-
-        past conversation:
-        {request.chat_history}
-
-        User: {request.chat_message}
-        Assistant:"""
+        if len(request.file_name) == 0:
+            context_prompt = get_chat_conversation_summary_prompt(request.chat_summary,
+                                                                  request.chat_history,
+                                                                  request.chat_message)
+        else:
+            doc = self.perform_rag(request.session_id, request.file_name, request.chat_message, request.model_provider,
+                                   request.model_name)
+            context_prompt = get_rag_prompt(request.chat_summary,
+                                            request.chat_history,
+                                            request.chat_message,
+                                            doc)
 
         # Check input token count
-        input_tokens = self.get_token_count(context_prompt, request.model_name, request.model_provider)
+        input_tokens = self.get_token_count(context_prompt, request.model_provider, request.model_name)
         input_tokens_cost = self.get_input_token_cost(input_tokens, request.model_name)
         if input_tokens > MAX_INPUT_TOKENS or input_tokens_cost > request.balance:
             context.set_details('Input token limit exceeded')

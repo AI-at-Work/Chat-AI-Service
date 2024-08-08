@@ -1,5 +1,4 @@
 import logging
-
 import requests
 import openai
 import os
@@ -7,10 +6,7 @@ import os
 
 class LLM:
     def __init__(self, openai_api_key):
-        self.openai_api_key = None
-
-    def set_api_key(self, api_key):
-        self.openai_api_key = api_key
+        self.openai_api_key = openai_api_key
 
     def generate(self, provider, model, user_prompt, system_prompt="", max_tokens=None):
         logging.info("Generating LLM... for provider " + provider)
