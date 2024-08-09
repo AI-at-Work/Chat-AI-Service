@@ -7,6 +7,15 @@ services:
     env_file:
       - .env
     container_name: ${AI_SERVER_HOST}
+    volumes:
+      - ./docs_index:/ai-service/docs_index
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     ports:
       - "${AI_SERVER_PORT}:${AI_SERVER_PORT}"
     networks:

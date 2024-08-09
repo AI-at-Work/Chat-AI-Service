@@ -39,7 +39,6 @@ MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS"))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_DIR = os.path.join(BASE_DIR, 'docs_index')
 
-os.environ['GIT_PYTHON_REFRESH'] = 'quiet'
 
 class AIService(ai_service_pb2_grpc.AIServiceServicer):
     def __init__(self, redis_client):
@@ -55,8 +54,9 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
             # Because we support ollama, and it is running locally; we can estimate cost based upon tokens later
             return 0
 
-    def get_input_token_cost(self, tokens, model_name):
-        cost = modules.cost.openai_cost.estimate_llm_api_cost(model_name, num_tokens_input=tokens, num_tokens_output=0)
+    def get_token_cost(self, input_tokens, output_tokens, model_name):
+        cost = modules.cost.openai_cost.estimate_llm_api_cost(model_name, num_tokens_input=input_tokens,
+                                                              num_tokens_output=output_tokens)
         return cost
 
     def perform_rag(self, session_id, pdf_file, chat_message, provider, model):
@@ -64,6 +64,9 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
                                     provider=provider, model=model)
 
     def Process(self, request, context):
+        input_tokens = 0
+        output_tokens = 0
+
         logging.info(
             f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, "
             f"chat_history:{request.chat_history}, chat_summary: {request.chat_summary}, model: {request.model_name}, "
@@ -79,14 +82,22 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
             context_prompt = get_rag_prompt(request.chat_summary,
                                             request.chat_history,
                                             request.chat_message,
-                                            doc)
+                                            doc["text"])
+
+            # these tokens are of RAG Raptor Summarization
+            input_tokens += doc["input_tokens"]
+            output_tokens += doc["output_tokens"]
 
         # Check input token count
-        input_tokens = self.get_token_count(context_prompt, request.model_provider, request.model_name)
-        input_tokens_cost = self.get_input_token_cost(input_tokens, request.model_name)
-        if input_tokens > MAX_INPUT_TOKENS or input_tokens_cost > request.balance:
-            context.set_details('Input token limit exceeded')
+        context_prompt_token = self.get_token_count(context_prompt, request.model_provider, request.model_name)
+        tokens_cost = self.get_token_cost(input_tokens + context_prompt_token, output_tokens, request.model_name)
+        if input_tokens > MAX_INPUT_TOKENS:
+            context.set_details("Input token limit exceeded")
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return ai_service_pb2.Response()
+        elif tokens_cost > request.balance:
+            context.set_details("Insufficient funds")
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
             return ai_service_pb2.Response()
 
         logging.info("Now about to start generating response.")
@@ -98,15 +109,19 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
                 user_prompt=context_prompt,
                 max_tokens=MAX_OUTPUT_TOKENS
             )
-            ai_response = response['text']
-            session_cost = modules.cost.openai_cost.estimate_llm_api_cost(request.model_name,
-                                                                          num_tokens_input=response['input_tokens'],
-                                                                          num_tokens_output=response['output_tokens'])
+            ai_response = response["text"]
+
+            # Now cost of final answer generation
+            input_tokens += response["input_tokens"]
+            output_tokens += response["output_tokens"]
+
+            session_cost = self.get_token_cost(input_tokens, output_tokens, request.model_name)
         except Exception as e:
             context.set_details(f'Failed to generate response from API: {e}')
             context.set_code(grpc.StatusCode.INTERNAL)
             return ai_service_pb2.Response()
 
+        print("Total session cost: ", session_cost)
         response = ai_service_pb2.Response(
             response_text=ai_response,
             timestamp=Timestamp(),

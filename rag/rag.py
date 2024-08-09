@@ -23,16 +23,19 @@ class rag:
         return self.llm_service.generate(provider, model, prompt, "")
 
     def perform_rag(self, session_id, pdf_file_path, query, provider, model):
-
         # get the data from pdfs
         pdf_data_list = get_text_from_pdfs(pdf_file_path)
 
         # create a bunch of documents
         # 4 min for 21 pages
-        docs = raptor_get_docs(pdf_data_list, self.llm_service, provider, model, self.embedding, chunk_size=512,
-                               chunk_overlap=0)
+        docs, input_tokens, output_tokens = raptor_get_docs(pdf_data_list, self.llm_service, provider, model,
+                                                            self.embedding, chunk_size=512,
+                                                            chunk_overlap=0)
 
         if not check_index_exists(self.INDEX_DIR, session_id):
+
+            print(docs)
+
             # create the colbert index
             colbert = create_colbert_index(self.INDEX_DIR, session_id, docs)
         else:
@@ -42,5 +45,9 @@ class rag:
             # add document to existing index
             add_to_index(colbert, docs)
 
+        answer = self.find_answers_in_pdf(query, colbert, provider, model)
+        answer["output_tokens"] += output_tokens
+        answer["input_tokens"] += input_tokens
+
         # now get the answer
-        return self.find_answers_in_pdf(query, colbert, provider, model)
+        return answer

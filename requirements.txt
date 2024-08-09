@@ -17,7 +17,7 @@ httpx==0.27.0
 idna==3.7
 multidict==6.0.5
 numpy~=1.26.4
-openai~=1.40.1
+openai==1.40.1
 protobuf==5.27.2
 pydantic==2.7.4
 pydantic_core==2.18.4
@@ -32,10 +32,10 @@ tqdm==4.66.4
 typing_extensions==4.12.2
 urllib3==2.2.2
 yarl==1.9.4
-
-RAGatouille~=0.0.8.post2
-pandas~=2.2.2
-scikit-learn~=1.5.1
-PyMuPDF~=1.24.9
-pysbd~=0.3.4
+RAGatouille==0.0.8.post2
+pandas==2.2.2
+scikit-learn==1.5.1
+PyMuPDF==1.24.9
+pysbd==0.3.4
 umap-learn==0.5.5
+faiss-gpu==1.7.2

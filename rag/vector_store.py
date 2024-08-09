@@ -2,7 +2,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from ragatouille import RAGPretrainedModel
 from pysbd import Segmenter
-from typing import List
+from typing import List, Tuple, Any
 
 from rag.raptor import recursive_embed_cluster_summarize
 import os
@@ -64,7 +64,7 @@ def raptor_get_docs(
         embd: SentenceTransformer,
         chunk_size=2000,
         chunk_overlap=50,
-) -> List[str]:
+) -> tuple[list[str], int, int]:
     try:
         text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
             chunk_size=chunk_size, chunk_overlap=chunk_overlap
@@ -76,18 +76,23 @@ def raptor_get_docs(
         print("Length of texts splits: ", len(texts_split))
 
         # generate the recursive summaries
-        results = recursive_embed_cluster_summarize(texts_split, llm_service, provider, model, embd)
+        results, input_tokens, output_tokens = recursive_embed_cluster_summarize(texts_split, llm_service, provider, model, embd)
+
+        print(results)
 
         all_texts = texts_split.copy()
 
         # Iterate through the results to extract summaries from each level and add them to all_texts
         for level in sorted(results.keys()):
-            # Extract summaries from the current level's DataFrame
+            print(results[level][1]["summaries"])
+
+            # get the summary text
             summaries = results[level][1]["summaries"].tolist()
+
             # Extend all_texts with the summaries from the current level
             all_texts.extend(summaries)
 
-        return all_texts
+        return all_texts, input_tokens, output_tokens
 
     except Exception as e:
         print(f"Error creating index: {e}")

@@ -2,11 +2,16 @@ import logging
 import requests
 import openai
 import os
-
+from typing import Optional
 
 class LLM:
     def __init__(self, openai_api_key):
-        self.openai_api_key = openai_api_key
+        if not openai_api_key:
+            raise ValueError("API key is required for OpenAI")
+        self.openai = openai.OpenAI(
+            # This is the default and can be omitted
+            api_key=openai_api_key,
+        )
 
     def generate(self, provider, model, user_prompt, system_prompt="", max_tokens=None):
         logging.info("Generating LLM... for provider " + provider)
@@ -47,27 +52,20 @@ class LLM:
         except requests.exceptions.RequestException as e:
             raise Exception(f"Error communicating with Ollama API: {str(e)}")
 
-    def _generate_openai(self, model, user_prompt, system_prompt, max_tokens):
-        if not self.openai_api_key:
-            raise ValueError("API key is required for OpenAI")
-
-        openai.api_key = self.openai_api_key
+    def _generate_openai(self, model, user_prompt, system_prompt, max_tokens: Optional[int]):
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
-        params = {
-            "model": model,
-            "messages": messages
-        }
-        if max_tokens is not None:
-            params["max_tokens"] = max_tokens
-
-        response = openai.ChatCompletion.create(**params)
+        response = self.openai.chat.completions.create(
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens
+        )
 
         return {
-            "text": response.choices[0].message.content,
+            "text": response.choices[0].text,
             "input_tokens": response.usage.prompt_tokens,
             "output_tokens": response.usage.completion_tokens
         }

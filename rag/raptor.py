@@ -1,175 +1,354 @@
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from sklearn.mixture import GaussianMixture
 import umap.umap_ as umap
-from typing import Dict, List, Optional, Tuple
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pandas import DataFrame
+from sklearn.mixture import GaussianMixture
 
 import prompts.rag_prompt
 
+RANDOM_SEED = 224  # Fixed seed for reproducibility
 
-def global_cluster_embeddings(embeddings: np.ndarray, dim: int, n_neighbors: Optional[int] = None,
-                              metric: str = "cosine") -> np.ndarray:
+
+def global_cluster_embeddings(
+        embeddings: np.ndarray,
+        dim: int,
+        n_neighbors: Optional[int] = None,
+        metric: str = "cosine",
+) -> np.ndarray:
+    """
+    Perform global dimensionality reduction on the embeddings using UMAP.
+
+    Parameters:
+    - embeddings: The input embeddings as a numpy array.
+    - dim: The target dimensionality for the reduced space.
+    - n_neighbors: Optional; the number of neighbors to consider for each point.
+                   If not provided, it defaults to the square root of the number of embeddings.
+    - metric: The distance metric to use for UMAP.
+
+    Returns:
+    - A numpy array of the embeddings reduced to the specified dimensionality.
+    """
     if n_neighbors is None:
         n_neighbors = int((len(embeddings) - 1) ** 0.5)
     return umap.UMAP(
-        n_neighbors=n_neighbors,
-        n_components=dim,
-        metric=metric,
-        random_state=None,  # Remove random_state
-        n_jobs=-1  # Use all available cores
+        n_neighbors=n_neighbors, n_components=dim, metric=metric
     ).fit_transform(embeddings)
 
 
-def local_cluster_embeddings(embeddings: np.ndarray, dim: int, num_neighbors: int = 10,
-                             metric: str = "cosine") -> np.ndarray:
+def local_cluster_embeddings(
+        embeddings: np.ndarray, dim: int, num_neighbors: int = 10, metric: str = "cosine"
+) -> np.ndarray:
+    """
+    Perform local dimensionality reduction on the embeddings using UMAP, typically after global clustering.
+
+    Parameters:
+    - embeddings: The input embeddings as a numpy array.
+    - dim: The target dimensionality for the reduced space.
+    - num_neighbors: The number of neighbors to consider for each point.
+    - metric: The distance metric to use for UMAP.
+
+    Returns:
+    - A numpy array of the embeddings reduced to the specified dimensionality.
+    """
     return umap.UMAP(
-        n_neighbors=num_neighbors,
-        n_components=dim,
-        metric=metric,
-        random_state=None,  # Remove random_state
-        n_jobs=-1  # Use all available cores
+        n_neighbors=num_neighbors, n_components=dim, metric=metric
     ).fit_transform(embeddings)
 
 
-def get_optimal_clusters(embeddings: np.ndarray, max_clusters: int = 50) -> int:
+def get_optimal_clusters(
+        embeddings: np.ndarray, max_clusters: int = 50, random_state: int = RANDOM_SEED
+) -> int:
+    """
+    Determine the optimal number of clusters using the Bayesian Information Criterion (BIC) with a Gaussian Mixture Model.
+
+    Parameters:
+    - embeddings: The input embeddings as a numpy array.
+    - max_clusters: The maximum number of clusters to consider.
+    - random_state: Seed for reproducibility.
+
+    Returns:
+    - An integer representing the optimal number of clusters found.
+    """
     max_clusters = min(max_clusters, len(embeddings))
     n_clusters = np.arange(1, max_clusters)
-
-    def compute_bic(n):
-        gm = GaussianMixture(n_components=n, random_state=None)  # Remove random_state
+    bics = []
+    for n in n_clusters:
+        gm = GaussianMixture(n_components=n, random_state=random_state)
         gm.fit(embeddings)
-        return gm.bic(embeddings)
-
-    with ThreadPoolExecutor() as executor:
-        bics = list(executor.map(compute_bic, n_clusters))
-
+        bics.append(gm.bic(embeddings))
     return n_clusters[np.argmin(bics)]
 
 
-def GMM_cluster(embeddings: np.ndarray, threshold: float):
+def GMM_cluster(embeddings: np.ndarray, threshold: float, random_state: int = 0):
+    """
+    Cluster embeddings using a Gaussian Mixture Model (GMM) based on a probability threshold.
+
+    Parameters:
+    - embeddings: The input embeddings as a numpy array.
+    - threshold: The probability threshold for assigning an embedding to a cluster.
+    - random_state: Seed for reproducibility.
+
+    Returns:
+    - A tuple containing the cluster labels and the number of clusters determined.
+    """
     n_clusters = get_optimal_clusters(embeddings)
-    gm = GaussianMixture(n_components=n_clusters, random_state=None)  # Remove random_state
+    gm = GaussianMixture(n_components=n_clusters, random_state=random_state)
     gm.fit(embeddings)
     probs = gm.predict_proba(embeddings)
     labels = [np.where(prob > threshold)[0] for prob in probs]
     return labels, n_clusters
 
 
-def process_global_cluster(args):
-    i, embeddings, global_clusters, dim, threshold, total_clusters = args
-    global_cluster_embeddings_ = embeddings[np.array([i in gc for gc in global_clusters])]
+def perform_clustering(
+        embeddings: np.ndarray,
+        dim: int,
+        threshold: float,
+) -> List[np.ndarray]:
+    """
+    Perform clustering on the embeddings by first reducing their dimensionality globally, then clustering
+    using a Gaussian Mixture Model, and finally performing local clustering within each global cluster.
 
-    if len(global_cluster_embeddings_) == 0:
-        return [], 0
-    if len(global_cluster_embeddings_) <= dim + 1:
-        return [(idx, np.array([total_clusters])) for idx in range(len(global_cluster_embeddings_))], 1
+    Parameters:
+    - embeddings: The input embeddings as a numpy array.
+    - dim: The target dimensionality for UMAP reduction.
+    - threshold: The probability threshold for assigning an embedding to a cluster in GMM.
 
-    reduced_embeddings_local = local_cluster_embeddings(global_cluster_embeddings_, dim)
-    local_clusters, n_local_clusters = GMM_cluster(reduced_embeddings_local, threshold)
-
-    results = []
-    for j in range(n_local_clusters):
-        local_cluster_embeddings_ = global_cluster_embeddings_[np.array([j in lc for lc in local_clusters])]
-        indices = np.where((embeddings == local_cluster_embeddings_[:, None]).all(-1))[1]
-        results.extend([(idx, np.array([j + total_clusters])) for idx in indices])
-
-    return results, n_local_clusters
-
-
-def perform_clustering(embeddings: np.ndarray, dim: int, threshold: float) -> List[np.ndarray]:
+    Returns:
+    - A list of numpy arrays, where each array contains the cluster IDs for each embedding.
+    """
     if len(embeddings) <= dim + 1:
+        # Avoid clustering when there's insufficient data
         return [np.array([0]) for _ in range(len(embeddings))]
 
+    # Global dimensionality reduction
     reduced_embeddings_global = global_cluster_embeddings(embeddings, dim)
-    global_clusters, n_global_clusters = GMM_cluster(reduced_embeddings_global, threshold)
+    # Global clustering
+    global_clusters, n_global_clusters = GMM_cluster(
+        reduced_embeddings_global, threshold
+    )
 
     all_local_clusters = [np.array([]) for _ in range(len(embeddings))]
     total_clusters = 0
 
-    with ProcessPoolExecutor() as executor:
-        args_list = [(i, embeddings, global_clusters, dim, threshold, total_clusters) for i in range(n_global_clusters)]
-        all_results = list(executor.map(process_global_cluster, args_list))
+    # Iterate through each global cluster to perform local clustering
+    for i in range(n_global_clusters):
+        # Extract embeddings belonging to the current global cluster
+        global_cluster_embeddings_ = embeddings[
+            np.array([i in gc for gc in global_clusters])
+        ]
 
-    for results, n_local_clusters in all_results:
-        for idx, cluster in results:
-            all_local_clusters[idx] = np.append(all_local_clusters[idx], cluster + total_clusters)
+        if len(global_cluster_embeddings_) == 0:
+            continue
+        if len(global_cluster_embeddings_) <= dim + 1:
+            # Handle small clusters with direct assignment
+            local_clusters = [np.array([0]) for _ in global_cluster_embeddings_]
+            n_local_clusters = 1
+        else:
+            # Local dimensionality reduction and clustering
+            reduced_embeddings_local = local_cluster_embeddings(
+                global_cluster_embeddings_, dim
+            )
+            local_clusters, n_local_clusters = GMM_cluster(
+                reduced_embeddings_local, threshold
+            )
+
+        # Assign local cluster IDs, adjusting for total clusters already processed
+        for j in range(n_local_clusters):
+            local_cluster_embeddings_ = global_cluster_embeddings_[
+                np.array([j in lc for lc in local_clusters])
+            ]
+            indices = np.where(
+                (embeddings == local_cluster_embeddings_[:, None]).all(-1)
+            )[1]
+            for idx in indices:
+                all_local_clusters[idx] = np.append(
+                    all_local_clusters[idx], j + total_clusters
+                )
+
         total_clusters += n_local_clusters
 
     return all_local_clusters
 
 
+### --- Our code below --- ###
+
+
 def embed(texts, embd):
-    with ThreadPoolExecutor() as executor:
-        text_embeddings = list(executor.map(embd.encode, texts))
-    return np.array(text_embeddings)
+    """
+    Generate embeddings for a list of text documents.
+
+    This function assumes the existence of an `embd` object with a method `embed_documents`
+    that takes a list of texts and returns their embeddings.
+
+    Parameters:
+    - texts: List[str], a list of text documents to be embedded.
+
+    Returns:
+    - numpy.ndarray: An array of embeddings for the given text documents.
+    """
+    text_embeddings = embd.encode(texts)
+    text_embeddings_np = np.array(text_embeddings)
+    return text_embeddings_np
 
 
 def embed_cluster_texts(texts, embd):
-    text_embeddings_np = embed(texts, embd)
-    cluster_labels = perform_clustering(text_embeddings_np, 10, 0.1)
-    return pd.DataFrame({
-        "text": texts,
-        "embd": list(text_embeddings_np),
-        "cluster": cluster_labels
-    })
+    """
+    Embeds a list of texts and clusters them, returning a DataFrame with texts, their embeddings, and cluster labels.
+
+    This function combines embedding generation and clustering into a single step. It assumes the existence
+    of a previously defined `perform_clustering` function that performs clustering on the embeddings.
+
+    Parameters:
+    - texts: List[str], a list of text documents to be processed.
+
+    Returns:
+    - pandas.DataFrame: A DataFrame containing the original texts, their embeddings, and the assigned cluster labels.
+    """
+    text_embeddings_np = embed(texts, embd)  # Generate embeddings
+    cluster_labels = perform_clustering(
+        text_embeddings_np, 10, 0.1
+    )  # Perform clustering on the embeddings
+    df = pd.DataFrame()  # Initialize a DataFrame to store the results
+    df["text"] = texts  # Store original texts
+    df["embd"] = list(text_embeddings_np)  # Store embeddings as a list in the DataFrame
+    df["cluster"] = cluster_labels  # Store cluster labels
+    return df
 
 
 def fmt_txt(df: pd.DataFrame) -> str:
-    return "--- --- \n --- --- ".join(df["text"].tolist())
+    """
+    Formats the text documents in a DataFrame into a single string.
+
+    Parameters:
+    - df: DataFrame containing the 'text' column with text documents to format.
+
+    Returns:
+    - A single string where all text documents are joined by a specific delimiter.
+    """
+    unique_txt = df["text"].tolist()
+    return "--- --- \n --- --- ".join(unique_txt)
 
 
-def process_cluster(cluster_data, llm_service, provider, model):
-    i, df_cluster = cluster_data
-    formatted_txt = fmt_txt(df_cluster)
-    prompt = prompts.rag_prompt.get_question_context_prompt(
-        question="Give a detailed summary of the documentation provided.",
-        context=f"Here is a sub-set of doc. \n\nDocumentation:\n{formatted_txt}")
-    summary = llm_service.generate(provider, model, prompt, "")
-    return i, summary
+def embed_cluster_summarize_texts(
+        texts: List[str], llm_service, provider, model, embd, level: int
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Embeds, clusters, and summarizes a list of texts. This function first generates embeddings for the texts,
+    clusters them based on similarity, expands the cluster assignments for easier processing, and then summarizes
+    the content within each cluster.
 
+    Parameters:
+    - texts: A list of text documents to be processed.
+    - llm_service: to call the LLM for summarizing texts.
+    - provider: LLM provider; for example - openai, ollama.
+    - model: to call the model for summarizing texts.
+    - embed: to call the model for embedding.
+    - level: An integer parameter that could define the depth or detail of processing.
 
-def embed_cluster_summarize_texts(texts: List[str], llm_service, provider, model, embd, level: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    Returns:
+    - Tuple containing two DataFrames:
+      1. The first DataFrame (`df_clusters`) includes the original texts, their embeddings, and cluster assignments.
+      2. The second DataFrame (`df_summary`) contains summaries for each cluster, the specified level of detail,
+         and the cluster identifiers.
+    """
+
+    # Embed and cluster the texts, resulting in a DataFrame with 'text', 'embd', and 'cluster' columns
     df_clusters = embed_cluster_texts(texts, embd)
 
+    # Prepare to expand the DataFrame for easier manipulation of clusters
     expanded_list = []
-    for index, row in df_clusters.iterrows():
-        expanded_list.extend(
-            [{"text": row["text"], "embd": row["embd"], "cluster": cluster} for cluster in row["cluster"]])
 
+    # Expand DataFrame entries to document-cluster pairings for straightforward processing
+    for index, row in df_clusters.iterrows():
+        for cluster in row["cluster"]:
+            expanded_list.append(
+                {"text": row["text"], "embd": row["embd"], "cluster": cluster}
+            )
+
+    # Create a new DataFrame from the expanded list
     expanded_df = pd.DataFrame(expanded_list)
+
+    # Retrieve unique cluster identifiers for processing
     all_clusters = expanded_df["cluster"].unique()
 
     print(f"--Generated {len(all_clusters)} clusters--")
 
-    with ProcessPoolExecutor() as executor:
-        cluster_summaries = list(executor.map(
-            process_cluster,
-            [(i, expanded_df[expanded_df["cluster"] == i]) for i in all_clusters],
-            [llm_service, provider, model] * len(all_clusters)
-        ))
+    # Format text within each cluster for summarization
+    summaries = []
+    input_tokens = 0
+    output_tokens = 0
+    for i in all_clusters:
+        df_cluster = expanded_df[expanded_df["cluster"] == i]
+        formatted_txt = fmt_txt(df_cluster)
+        summary = llm_service.generate(
+            provider=provider,
+            model=model,
+            user_prompt=prompts.rag_prompt.get_question_context_prompt(
+                context=f"Here is a sub-set of doc. \n\nDocumentation:\n{formatted_txt}",
+                question="Give a detailed summary of the documentation provided."
+            )
+        )
+        input_tokens += summary["input_tokens"]
+        output_tokens += summary["output_tokens"]
+        summaries.append(summary["text"])
 
-    summaries = [summary for _, summary in sorted(cluster_summaries)]
-
-    df_summary = pd.DataFrame({
-        "summaries": summaries,
-        "level": [level] * len(summaries),
-        "cluster": list(all_clusters),
-    })
+    # Create a DataFrame to store summaries with their corresponding cluster and level
+    df_summary = pd.DataFrame(
+        {
+            "summaries": summaries,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "level": [level] * len(summaries),
+            "cluster": list(all_clusters),
+        }
+    )
 
     return df_clusters, df_summary
 
 
-def recursive_embed_cluster_summarize(texts: List[str], llm_service, provider, model, embd, level: int = 1, n_levels: int = 3) -> Dict[
-    int, Tuple[pd.DataFrame, pd.DataFrame]]:
-    results = {}
+def recursive_embed_cluster_summarize(
+        texts: List[str], llm_service, provider, model, embd, level: int = 1, n_levels: int = 3,
+        input_tokens: int = 0, output_tokens: int = 0
+) -> tuple[dict[int, tuple[DataFrame, DataFrame]], int, int]:
+    """
+    Recursively embeds, clusters, and summarizes texts up to a specified level or until
+    the number of unique clusters becomes 1, storing the results at each level.
+
+    Parameters:
+    - texts: List[str], texts to be processed.
+    - llm_service: to call the LLM for summarizing texts.
+    - provider: LLM provider; for example - openai, ollama.
+    - model: to call the model for summarizing texts.
+    - embed: to call the model for embedding.
+    - n_levels: int, maximum depth of recursion.
+
+    Returns:
+    - Dict[int, Tuple[pd.DataFrame, pd.DataFrame]], a dictionary where keys are the recursion
+      levels and values are tuples containing the clusters DataFrame and summaries DataFrame at that level.
+    """
+    results = {}  # Dictionary to store results at each level
+
+    # Perform embedding, clustering, and summarization for the current level
     df_clusters, df_summary = embed_cluster_summarize_texts(texts, llm_service, provider, model, embd, level)
+
+    input_tokens += df_summary["input_tokens"]
+    output_tokens += df_summary["output_tokens"]
+
+    # Store the results of the current level
     results[level] = (df_clusters, df_summary)
 
+    # Determine if further recursion is possible and meaningful
     unique_clusters = df_summary["cluster"].nunique()
     if level < n_levels and unique_clusters > 1:
+        # Use summaries as the input texts for the next level of recursion
         new_texts = df_summary["summaries"].tolist()
-        next_level_results = recursive_embed_cluster_summarize(new_texts, llm_service, provider, model, embd, level + 1, n_levels)
+        next_level_results, input_tokens, output_tokens = recursive_embed_cluster_summarize(
+            new_texts, llm_service, provider, model, embd, level + 1, n_levels, input_tokens, output_tokens
+        )
+
+        # Merge the results from the next level into the current results dictionary
         results.update(next_level_results)
 
-    return results
+    return results, input_tokens, output_tokens
