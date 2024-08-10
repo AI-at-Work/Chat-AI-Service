@@ -6,10 +6,10 @@ from sentence_transformers import SentenceTransformer
 
 
 class rag:
-    def __init__(self, llm_service, INDEX_DIR):
+    def __init__(self, llm_service, index_dir):
         self.embedding = SentenceTransformer('BAAI/bge-large-en-v1.5')
         self.llm_service = llm_service
-        self.INDEX_DIR = INDEX_DIR
+        self.INDEX_DIR = index_dir
 
     def find_answers_in_pdf(self, question: str, colbert: RAGPretrainedModel, provider, model):
         # Query Pinecone

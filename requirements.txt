@@ -32,10 +32,9 @@ tqdm==4.66.4
 typing_extensions==4.12.2
 urllib3==2.2.2
 yarl==1.9.4
-RAGatouille==0.0.8.post2
+RAGatouille==0.0.8post1
 pandas==2.2.2
 scikit-learn==1.5.1
 PyMuPDF==1.24.9
 pysbd==0.3.4
 umap-learn==0.5.5
-faiss-gpu==1.7.2

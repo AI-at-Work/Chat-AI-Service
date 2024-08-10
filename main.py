@@ -91,6 +91,13 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         # Check input token count
         context_prompt_token = self.get_token_count(context_prompt, request.model_provider, request.model_name)
         tokens_cost = self.get_token_cost(input_tokens + context_prompt_token, output_tokens, request.model_name)
+
+        logging.info("Input tokens:", input_tokens, type(input_tokens))
+        logging.info("Output tokens:", output_tokens, type(output_tokens))
+        logging.info("Tokens cost:", tokens_cost, type(tokens_cost))
+        logging.info("MAX IP Tokens:", MAX_INPUT_TOKENS, type(MAX_INPUT_TOKENS))
+        logging.info("\n\n\n")
+
         if input_tokens > MAX_INPUT_TOKENS:
             context.set_details("Input token limit exceeded")
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)

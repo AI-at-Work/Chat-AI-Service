@@ -40,7 +40,7 @@ def create_colbert_index(path, index_name: str, docs: List[str]) -> RAGPretraine
             collection=docs,
             split_documents=False,
             index_name=index_name,
-            # use_faiss=True,
+            use_faiss=True,
         )
 
         return colbert

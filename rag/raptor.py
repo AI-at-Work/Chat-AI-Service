@@ -351,4 +351,4 @@ def recursive_embed_cluster_summarize(
         # Merge the results from the next level into the current results dictionary
         results.update(next_level_results)
 
-    return results, input_tokens, output_tokens
+    return results, int(input_tokens), int(output_tokens)

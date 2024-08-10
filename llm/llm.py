@@ -66,6 +66,6 @@ class LLM:
 
         return {
             "text": response.choices[0].text,
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens
+            "input_tokens": int(response.usage.prompt_tokens),
+            "output_tokens": int(response.usage.completion_tokens)
         }
