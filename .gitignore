@@ -25,3 +25,4 @@ go.work.sum
 .env
 docker_compose_storage
 ollama_data_docker/*
+docs_index
