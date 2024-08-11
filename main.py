@@ -1,14 +1,17 @@
 import grpc
 from concurrent import futures
 import logging
-import openai
 import redis
 from google.protobuf.timestamp_pb2 import Timestamp
+from prompts.chat_conversation_summary_prompt import get_chat_conversation_summary_prompt
+from prompts.rag_prompt import get_rag_prompt
 import sys
 import os
 import tiktoken
 
+from rag import rag, vector_store
 import modules.cost.openai_cost
+import prompts.chat_conversation_summary_prompt
 
 # Add the server directory to the Python path
 server_dir = os.path.dirname(os.path.abspath(__file__)) + '/pb'
@@ -32,52 +35,72 @@ AI_SERVER_PORT = os.getenv("AI_SERVER_PORT")
 MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS"))
 MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS"))
 
+# path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_DIR = os.path.join(BASE_DIR, 'docs_index')
+
 
 class AIService(ai_service_pb2_grpc.AIServiceServicer):
     def __init__(self, redis_client):
         self.redis_client = redis_client
         self.llm_service = LLM(openai_api_key=os.getenv("OPENAI_API_KEY"))
+        self.rag = rag.rag(self.llm_service, INDEX_DIR)
 
-    def get_token_count(self, text, model, model_provider):
-        if model_provider == "openai":
+    def get_token_count(self, text, provider, model):
+        if provider == "openai":
             encoding = tiktoken.encoding_for_model(model)
             return len(encoding.encode(text))
         else:
-            return 0 # Because we support ollama, and it is running locally; we can estimate cost based upon tokens later
+            # Because we support ollama, and it is running locally; we can estimate cost based upon tokens later
+            return 0
 
-    def get_input_token_cost(self, tokens, model_name):
-        cost = modules.cost.openai_cost.estimate_llm_api_cost(model_name, num_tokens_input=tokens, num_tokens_output=0)
+    def get_token_cost(self, input_tokens, output_tokens, model_name):
+        cost = modules.cost.openai_cost.estimate_llm_api_cost(model_name, num_tokens_input=input_tokens,
+                                                              num_tokens_output=output_tokens)
         return cost
 
+    def perform_rag(self, session_id, pdf_file, chat_message, provider, model):
+        return self.rag.perform_rag(session_id=session_id, pdf_file_path=pdf_file, query=chat_message,
+                                    provider=provider, model=model)
+
     def Process(self, request, context):
+        input_tokens = 0
+        output_tokens = 0
+
         logging.info(
-            f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, "
+            f"Received chat from user {request.user_id}, chat_message: {request.chat_message}, session {request.session_id}, file: {request.file_name}, "
             f"chat_history:{request.chat_history}, chat_summary: {request.chat_summary}, model: {request.model_name}, "
             f"model_provider: {request.model_provider}\n\n")
 
-        context_prompt = f"""The following is a friendly conversation between a user and an AI Assistant. The AI 
-        Assistant is talkative and provides lots of specific details from its context and do what user ask for. If 
-        the AI Assistant does not know the answer to a question, it truthfully says it does not know.
+        # if any doc exists in session then fetch its docs
+        doc = self.perform_rag(request.session_id, request.file_name, request.chat_message,
+                               request.model_provider,
+                               request.model_name)
 
-        the summary is given in the form of text and past conversation is given in the form of json. Use the provided 
-        Summary of conversation and past conversation to answer the query of the user and follow the instructions. (
-        You do not need to use these pieces of information if not relevant)
+        if "text" in doc:
+            context_prompt = get_rag_prompt(request.chat_summary,
+                                            request.chat_history,
+                                            request.chat_message,
+                                            doc["text"])
 
-        Summary of conversation:
-        {request.chat_summary}
-
-        past conversation:
-        {request.chat_history}
-
-        User: {request.chat_message}
-        Assistant:"""
+            # these tokens are of RAG Raptor Summarization
+            input_tokens += doc["input_tokens"]
+            output_tokens += doc["output_tokens"]
+        else:
+            context_prompt = get_chat_conversation_summary_prompt(request.chat_summary, request.chat_history,
+                                                                  request.chat_message)
 
         # Check input token count
-        input_tokens = self.get_token_count(context_prompt, request.model_name, request.model_provider)
-        input_tokens_cost = self.get_input_token_cost(input_tokens, request.model_name)
-        if input_tokens > MAX_INPUT_TOKENS or input_tokens_cost > request.balance:
-            context.set_details('Input token limit exceeded')
+        context_prompt_token = self.get_token_count(context_prompt, request.model_provider, request.model_name)
+        tokens_cost = self.get_token_cost(input_tokens + context_prompt_token, output_tokens, request.model_name)
+
+        if input_tokens > MAX_INPUT_TOKENS:
+            context.set_details("Input token limit exceeded")
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            return ai_service_pb2.Response()
+        elif tokens_cost > request.balance:
+            context.set_details("Insufficient funds")
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
             return ai_service_pb2.Response()
 
         logging.info("Now about to start generating response.")
@@ -89,15 +112,19 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
                 user_prompt=context_prompt,
                 max_tokens=MAX_OUTPUT_TOKENS
             )
-            ai_response = response['text']
-            session_cost = modules.cost.openai_cost.estimate_llm_api_cost(request.model_name,
-                                                                          num_tokens_input=response['input_tokens'],
-                                                                          num_tokens_output=response['output_tokens'])
+            ai_response = response["text"]
+
+            # Now cost of final answer generation
+            input_tokens += response["input_tokens"]
+            output_tokens += response["output_tokens"]
+
+            session_cost = self.get_token_cost(input_tokens, output_tokens, request.model_name)
         except Exception as e:
             context.set_details(f'Failed to generate response from API: {e}')
             context.set_code(grpc.StatusCode.INTERNAL)
             return ai_service_pb2.Response()
 
+        print("Total session cost: ", session_cost)
         response = ai_service_pb2.Response(
             response_text=ai_response,
             timestamp=Timestamp(),
