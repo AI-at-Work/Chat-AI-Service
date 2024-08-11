@@ -1,5 +1,6 @@
+import logging
+
 from rag.extractor import get_text_from_pdfs
-import prompts.rag_prompt
 from rag.vector_store import raptor_get_docs, check_index_exists, create_colbert_index, get_colbert_index, add_to_index
 from ragatouille import RAGPretrainedModel
 from sentence_transformers import SentenceTransformer
@@ -11,43 +12,51 @@ class rag:
         self.llm_service = llm_service
         self.INDEX_DIR = index_dir
 
-    def find_answers_in_pdf(self, question: str, colbert: RAGPretrainedModel, provider, model):
+    def find_answers_store(self, question: str, colbert: RAGPretrainedModel):
         # Query Pinecone
         results = colbert.search(query=question, k=10)
 
         context = [res['content'] for res in results]
 
-        prompt = prompts.rag_prompt.get_question_context_prompt(context, question)
-
-        # Generate an answer using the LLM service
-        return self.llm_service.generate(provider, model, prompt, "")
+        return context
 
     def perform_rag(self, session_id, pdf_file_path, query, provider, model):
-        # get the data from pdfs
-        pdf_data_list = get_text_from_pdfs(pdf_file_path)
+        pdf_data_list = None
+        docs = None
+        answer = dict()
+        input_tokens = output_tokens = 0
 
-        # create a bunch of documents
-        # 4 min for 21 pages
-        docs, input_tokens, output_tokens = raptor_get_docs(pdf_data_list, self.llm_service, provider, model,
-                                                            self.embedding, chunk_size=512,
-                                                            chunk_overlap=0)
+        if len(pdf_file_path) != 0:
+            # get the data from pdfs
+            pdf_data_list = get_text_from_pdfs(pdf_file_path)
 
-        if not check_index_exists(self.INDEX_DIR, session_id):
+            # create a bunch of documents
+            # 4 min for 21 pages
+            docs, input_tokens, output_tokens = raptor_get_docs(pdf_data_list, self.llm_service, provider, model,
+                                                                self.embedding, chunk_size=512,
+                                                                chunk_overlap=0)
 
-            print(docs)
-
-            # create the colbert index
-            colbert = create_colbert_index(self.INDEX_DIR, session_id, docs)
-        else:
+        if check_index_exists(self.INDEX_DIR, session_id):
             # get the existing index
             colbert = get_colbert_index(self.INDEX_DIR, session_id)
 
-            # add document to existing index
-            add_to_index(colbert, docs)
+            if pdf_data_list is not None:
+                logging.info("Adding docs to existing index ... !!")
+                # add document to existing index
+                add_to_index(colbert, docs)
 
-        answer = self.find_answers_in_pdf(query, colbert, provider, model)
-        answer["output_tokens"] += output_tokens
-        answer["input_tokens"] += input_tokens
+        else:
+            if docs is not None:
+                # create the colbert index
+                colbert = create_colbert_index(self.INDEX_DIR, session_id, docs)
+            else:
+                return answer
+
+        context_docs = self.find_answers_store(query, colbert)
+
+        answer["text"] = context_docs
+        answer["output_tokens"] = output_tokens
+        answer["input_tokens"] = input_tokens
 
         # now get the answer
         return answer

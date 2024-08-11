@@ -9,7 +9,7 @@ import sys
 import os
 import tiktoken
 
-from rag import rag
+from rag import rag, vector_store
 import modules.cost.openai_cost
 import prompts.chat_conversation_summary_prompt
 
@@ -68,17 +68,16 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
         output_tokens = 0
 
         logging.info(
-            f"Received chat from user {request.user_id}, session {request.session_id}, file: {request.file_name}, "
+            f"Received chat from user {request.user_id}, chat_message: {request.chat_message}, session {request.session_id}, file: {request.file_name}, "
             f"chat_history:{request.chat_history}, chat_summary: {request.chat_summary}, model: {request.model_name}, "
             f"model_provider: {request.model_provider}\n\n")
 
-        if len(request.file_name) == 0:
-            context_prompt = get_chat_conversation_summary_prompt(request.chat_summary,
-                                                                  request.chat_history,
-                                                                  request.chat_message)
-        else:
-            doc = self.perform_rag(request.session_id, request.file_name, request.chat_message, request.model_provider,
-                                   request.model_name)
+        # if any doc exists in session then fetch its docs
+        doc = self.perform_rag(request.session_id, request.file_name, request.chat_message,
+                               request.model_provider,
+                               request.model_name)
+
+        if "text" in doc:
             context_prompt = get_rag_prompt(request.chat_summary,
                                             request.chat_history,
                                             request.chat_message,
@@ -87,16 +86,13 @@ class AIService(ai_service_pb2_grpc.AIServiceServicer):
             # these tokens are of RAG Raptor Summarization
             input_tokens += doc["input_tokens"]
             output_tokens += doc["output_tokens"]
+        else:
+            context_prompt = get_chat_conversation_summary_prompt(request.chat_summary, request.chat_history,
+                                                                  request.chat_message)
 
         # Check input token count
         context_prompt_token = self.get_token_count(context_prompt, request.model_provider, request.model_name)
         tokens_cost = self.get_token_cost(input_tokens + context_prompt_token, output_tokens, request.model_name)
-
-        logging.info("Input tokens:", input_tokens, type(input_tokens))
-        logging.info("Output tokens:", output_tokens, type(output_tokens))
-        logging.info("Tokens cost:", tokens_cost, type(tokens_cost))
-        logging.info("MAX IP Tokens:", MAX_INPUT_TOKENS, type(MAX_INPUT_TOKENS))
-        logging.info("\n\n\n")
 
         if input_tokens > MAX_INPUT_TOKENS:
             context.set_details("Input token limit exceeded")

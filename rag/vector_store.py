@@ -2,14 +2,15 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from ragatouille import RAGPretrainedModel
 from pysbd import Segmenter
-from typing import List, Tuple, Any
+from typing import List
 
 from rag.raptor import recursive_embed_cluster_summarize
 import os
 
+use_faiss = True
 
 def add_to_index(colbert: RAGPretrainedModel, docs: List[str]):
-    colbert.add_to_index(docs)
+    colbert.add_to_index(docs, use_faiss=use_faiss)
 
 
 def check_index_exists(INDEX_DIR, idx_name):
@@ -40,7 +41,7 @@ def create_colbert_index(path, index_name: str, docs: List[str]) -> RAGPretraine
             collection=docs,
             split_documents=False,
             index_name=index_name,
-            use_faiss=True,
+            use_faiss=use_faiss,
         )
 
         return colbert
