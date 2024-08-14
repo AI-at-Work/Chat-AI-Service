@@ -28,7 +28,7 @@ A Service to write AI Agent Logic.
 
 3. Start the service:
    ```bash
-   make proto && docker-compose up -d --build
+   make proto && docker compose up -d --build
    ```
 
 # To add Nvidia GPU to the Ollama You Need to install NVIDIA Container Toolkit
